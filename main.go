@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"database/sql"
 	"encoding/csv"
 	"flag"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -22,9 +24,45 @@ func main() {
 
 func run() error {
 	var (
-		dataSource = flag.String("datasource", "etl:etl@(localhost:3306)/kickstarter?parseTime=true", "")
+		dataSource = flag.String("datasource", "etl:etl@(localhost:3306)/kickstarter?parseTime=true", "database configuration")
+		delete     = flag.Bool("delete", false, "delete all tables")
 	)
 	flag.Parse()
+
+	db, err := sql.Open("mysql", *dataSource)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if *delete {
+		fmt.Print("Delete all data from kickstarter table? (y/n) ")
+		r := bufio.NewReader(os.Stdin)
+		answer, err := r.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		answer = strings.ToLower(string(answer))
+		if !strings.Contains(answer, "y") {
+			fmt.Println("Doing nothing")
+			return nil
+		}
+		fmt.Println("Deleting all tables")
+		if err := deleteTables(db); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	count, err := countDatabaseTables(db, "kickstarter")
+	if err != nil {
+		return fmt.Errorf("counting database tables: %v", err)
+	}
+	if count != 0 {
+		fmt.Printf("Database is not empty (it has %d tables). Please delete all tables or run the program with --delete\n", count)
+		return nil
+	}
+
 	file := "kickstarter-data/ks-projects-201801.csv.zip"
 	zipr, err := zip.OpenReader(file)
 	if err != nil {
@@ -42,29 +80,23 @@ func run() error {
 		}
 		defer f.Close()
 
+		fmt.Println("Extracting data from", zf.Name)
 		data, err := extractData(f)
 		if err != nil {
 			return fmt.Errorf("extracting data: %v", err)
 		}
 
+		fmt.Println("Transforming data")
 		kickstarts := transformData(data)
 
-		db, err := sql.Open("mysql", *dataSource)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		if err := deleteTables(db); err != nil {
-			return err
-		}
-
+		fmt.Println("Creating tables")
 		if err := createTables(db); err != nil {
 			return err
 		}
 
+		fmt.Println("Loading data")
 		if err := loadData(db, kickstarts); err != nil {
-			return err
+			return fmt.Errorf("loading data: %v", err)
 		}
 	}
 
@@ -267,8 +299,19 @@ func deleteTables(db *sql.DB) error {
 	return nil
 }
 
+func countDatabaseTables(db *sql.DB, database string) (int, error) {
+	const query = `SELECT COUNT(DISTINCT table_name) FROM information_schema.columns WHERE table_schema = ?`
+	var count int
+	if err := db.QueryRow(query, database).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
 func loadData(db *sql.DB, kk []Kickstart) error {
-	for _, k := range kk {
+	for i, k := range kk {
+		total := len(kk)
+		percent := i * 100 / total
+		fmt.Printf("\r%d/%d (%d%%)", i, total, percent)
 		res, err := db.Exec("INSERT INTO products (kickstarter_id, name) values (?, ?)", k.Product.KickstarterID, k.Product.Name)
 		if err != nil {
 			return err
