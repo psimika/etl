@@ -328,6 +328,14 @@ func createTables(db *sql.DB) error {
 	if _, err := db.Exec(tableCategories); err != nil {
 		return err
 	}
+	const tableCurrencies = `
+		CREATE TABLE IF NOT EXISTS currencies (
+			id INT PRIMARY KEY AUTO_INCREMENT,
+			type varchar(255)
+		)`
+	if _, err := db.Exec(tableCurrencies); err != nil {
+		return err
+	}
 	const tableStates = `
 		CREATE TABLE IF NOT EXISTS states (
 			id INT PRIMARY KEY AUTO_INCREMENT,
@@ -355,11 +363,13 @@ func createTables(db *sql.DB) error {
 			product_id INT,
 			main_category_id INT,
 			category_id INT,
+			currency_id INT,
 			state_id INT,
 			area_id INT,
 			FOREIGN KEY (product_id) REFERENCES products (id),
 			FOREIGN KEY (main_category_id) REFERENCES main_categories (id),
 			FOREIGN KEY (category_id) REFERENCES categories (id),
+			FOREIGN KEY (currency_id) REFERENCES currencies (id),
 			FOREIGN KEY (state_id) REFERENCES states (id),
 			FOREIGN KEY (area_id) REFERENCES areas (id)
 		)`
@@ -381,6 +391,9 @@ func deleteTables(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS categories"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS currencies"); err != nil {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS states"); err != nil {
@@ -433,6 +446,15 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 			return err
 		}
 
+		res, err = db.Exec("INSERT INTO currencies (type) values (?)", k.Currency.Type)
+		if err != nil {
+			return err
+		}
+		currencyID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+
 		res, err = db.Exec("INSERT INTO states (state) values (?)", k.State.State)
 		if err != nil {
 			return err
@@ -455,6 +477,7 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 			product_id,
 			main_category_id,
 			category_id,
+			currency_id,
 			state_id,
 			area_id,
 			goal,
@@ -462,8 +485,8 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 			pledged,
 			pledged_usd,
 			pledged_usd_real
-		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, stateID, areaID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD, k.PledgedUSDReal)
+		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, currencyID, stateID, areaID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD, k.PledgedUSDReal)
 		if err != nil {
 			return err
 		}
