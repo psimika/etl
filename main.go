@@ -114,15 +114,15 @@ type Data struct {
 	MainCategory   string
 	Currency       string
 	Deadline       string
-	Goal           string
 	Launched       string
-	Pledged        string
 	State          string
-	Backers        string
 	Country        string
-	PledgedUSD     string
-	PledgedRealUSD string
-	GoalRealUSD    string
+	Backers        int
+	Pledged        float64
+	PledgedUSD     float64
+	PledgedUSDReal float64
+	Goal           float64
+	GoalUSDReal    float64
 }
 
 func extractData(r io.Reader) ([]Data, error) {
@@ -141,26 +141,59 @@ func extractData(r io.Reader) ([]Data, error) {
 			return nil, err
 		}
 		d := Data{
-			Name:           row[1],
-			Category:       row[2],
-			MainCategory:   row[3],
-			Currency:       row[4],
-			Deadline:       row[5],
-			Goal:           row[6],
-			Launched:       row[7],
-			Pledged:        row[8],
-			State:          row[9],
-			Backers:        row[10],
-			Country:        row[11],
-			PledgedUSD:     row[12],
-			PledgedRealUSD: row[13],
-			GoalRealUSD:    row[14],
+			Name:         row[1],
+			Category:     row[2],
+			MainCategory: row[3],
+			Currency:     row[4],
+			Deadline:     row[5],
+			Launched:     row[7],
+			State:        row[9],
+			Country:      row[11],
 		}
+
 		id, err := strconv.ParseInt(row[0], 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("parsing %s: %v", row[0], err)
+			return nil, fmt.Errorf("parsing id %s: %v", row[0], err)
 		}
 		d.ID = id
+
+		goal, err := strconv.ParseFloat(row[6], 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing goal %s: %v", row[6], err)
+		}
+		d.Goal = goal
+
+		pledged, err := strconv.ParseFloat(row[8], 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing pledged %s: %v", row[8], err)
+		}
+		d.Pledged = pledged
+
+		backers, err := strconv.Atoi(row[10])
+		if err != nil {
+			return nil, fmt.Errorf("parsing backers %s: %v", row[10], err)
+		}
+		d.Backers = backers
+
+		pledgedUSD, err := strconv.ParseFloat(row[12], 64)
+		if err != nil {
+			// Silently skip rows with empty pledgedUSD.
+			continue
+		}
+		d.PledgedUSD = pledgedUSD
+
+		pledgedUSDReal, err := strconv.ParseFloat(row[13], 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing pledgedUSDReal %s: %v", row[13], err)
+		}
+		d.PledgedUSDReal = pledgedUSDReal
+
+		goalUSDReal, err := strconv.ParseFloat(row[14], 64)
+		if err != nil {
+			return nil, fmt.Errorf("parsing goalUSDReal %s: %v", row[14], err)
+		}
+		d.GoalUSDReal = goalUSDReal
+
 		dd = append(dd, d)
 	}
 	return dd, nil
@@ -196,10 +229,11 @@ func transformData(dd []Data) []Kickstart {
 			StateID:        id,
 			AreaID:         id,
 
-			Goal:       d.Goal,
-			Backers:    d.Backers,
-			Pledged:    d.Pledged,
-			PledgedUSD: d.PledgedUSD,
+			Backers:     d.Backers,
+			Goal:        d.Goal,
+			GoalUSDReal: d.GoalUSDReal,
+			Pledged:     d.Pledged,
+			PledgedUSD:  d.PledgedUSD,
 		}
 		kk = append(kk, k)
 	}
@@ -223,10 +257,12 @@ type Kickstart struct {
 	StateID        int64
 	AreaID         int64
 
-	Goal       string
-	Pledged    string
-	Backers    string
-	PledgedUSD string
+	Backers        int
+	Goal           float64
+	GoalUSDReal    float64
+	Pledged        float64
+	PledgedUSD     float64
+	PledgedUSDReal float64
 }
 
 type Product struct {
@@ -311,10 +347,11 @@ func createTables(db *sql.DB) error {
 	const tableKickstarts = `
 		CREATE TABLE IF NOT EXISTS kickstarts (
 			id INT PRIMARY KEY AUTO_INCREMENT,
-			goal varchar(255),
-			backers varchar(255),
-			pledged varchar(255),
-			pledged_usd varchar(255),
+			backers INT,
+			goal NUMERIC(12,2),
+			pledged NUMERIC(12,2),
+			pledged_usd NUMERIC(12,2),
+			pledged_usd_real NUMERIC(12,2),
 			product_id INT,
 			main_category_id INT,
 			category_id INT,
@@ -423,9 +460,10 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 			goal,
 			backers,
 			pledged,
-			pledged_usd
-		) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, stateID, areaID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD)
+			pledged_usd,
+			pledged_usd_real
+		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, stateID, areaID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD, k.PledgedUSDReal)
 		if err != nil {
 			return err
 		}
