@@ -292,6 +292,22 @@ func createTables(db *sql.DB) error {
 	if _, err := db.Exec(tableCategories); err != nil {
 		return err
 	}
+	const tableStates = `
+		CREATE TABLE IF NOT EXISTS states (
+			id INT PRIMARY KEY AUTO_INCREMENT,
+			state varchar(255)
+		)`
+	if _, err := db.Exec(tableStates); err != nil {
+		return err
+	}
+	const tableAreas = `
+		CREATE TABLE IF NOT EXISTS areas (
+			id INT PRIMARY KEY AUTO_INCREMENT,
+			country varchar(255)
+		)`
+	if _, err := db.Exec(tableAreas); err != nil {
+		return err
+	}
 	const tableKickstarts = `
 		CREATE TABLE IF NOT EXISTS kickstarts (
 			id INT PRIMARY KEY AUTO_INCREMENT,
@@ -302,9 +318,13 @@ func createTables(db *sql.DB) error {
 			product_id INT,
 			main_category_id INT,
 			category_id INT,
+			state_id INT,
+			area_id INT,
 			FOREIGN KEY (product_id) REFERENCES products (id),
 			FOREIGN KEY (main_category_id) REFERENCES main_categories (id),
-			FOREIGN KEY (category_id) REFERENCES categories (id)
+			FOREIGN KEY (category_id) REFERENCES categories (id),
+			FOREIGN KEY (state_id) REFERENCES states (id),
+			FOREIGN KEY (area_id) REFERENCES areas (id)
 		)`
 	if _, err := db.Exec(tableKickstarts); err != nil {
 		return fmt.Errorf("creating table kickstarts: %v", err)
@@ -324,6 +344,12 @@ func deleteTables(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS categories"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS states"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS areas"); err != nil {
 		return err
 	}
 	return nil
@@ -370,19 +396,40 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 			return err
 		}
 
+		res, err = db.Exec("INSERT INTO states (state) values (?)", k.State.State)
+		if err != nil {
+			return err
+		}
+		stateID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+
+		res, err = db.Exec("INSERT INTO areas (country) values (?)", k.Area.Country)
+		if err != nil {
+			return err
+		}
+		areaID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+
 		const insertKickstarts = `INSERT INTO kickstarts (
 			product_id,
 			main_category_id,
 			category_id,
+			state_id,
+			area_id,
 			goal,
 			backers,
 			pledged,
 			pledged_usd
-		) values (?, ?, ?, ?, ?, ?, ?)`
-		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD)
+		) values (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, stateID, areaID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD)
 		if err != nil {
 			return err
 		}
 	}
+	fmt.Printf("\r%d/%d (100%%)\n", len(kk), len(kk))
 	return nil
 }
