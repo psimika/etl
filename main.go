@@ -336,6 +336,15 @@ func createTables(db *sql.DB) error {
 	if _, err := db.Exec(tableCurrencies); err != nil {
 		return err
 	}
+	const tableDates = `
+		CREATE TABLE IF NOT EXISTS dates (
+			id INT PRIMARY KEY AUTO_INCREMENT,
+			deadline DATE,
+			launched DATETIME
+		)`
+	if _, err := db.Exec(tableDates); err != nil {
+		return err
+	}
 	const tableStates = `
 		CREATE TABLE IF NOT EXISTS states (
 			id INT PRIMARY KEY AUTO_INCREMENT,
@@ -364,12 +373,14 @@ func createTables(db *sql.DB) error {
 			main_category_id INT,
 			category_id INT,
 			currency_id INT,
+			date_id INT,
 			state_id INT,
 			area_id INT,
 			FOREIGN KEY (product_id) REFERENCES products (id),
 			FOREIGN KEY (main_category_id) REFERENCES main_categories (id),
 			FOREIGN KEY (category_id) REFERENCES categories (id),
 			FOREIGN KEY (currency_id) REFERENCES currencies (id),
+			FOREIGN KEY (date_id) REFERENCES dates (id),
 			FOREIGN KEY (state_id) REFERENCES states (id),
 			FOREIGN KEY (area_id) REFERENCES areas (id)
 		)`
@@ -394,6 +405,9 @@ func deleteTables(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS currencies"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS dates"); err != nil {
 		return err
 	}
 	if _, err := db.Exec("DROP TABLE IF EXISTS states"); err != nil {
@@ -455,6 +469,15 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 			return err
 		}
 
+		res, err = db.Exec("INSERT INTO dates (deadline, launched) values (?, ?)", k.Date.Deadline, k.Date.Launched)
+		if err != nil {
+			return err
+		}
+		dateID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+
 		res, err = db.Exec("INSERT INTO states (state) values (?)", k.State.State)
 		if err != nil {
 			return err
@@ -478,6 +501,7 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 			main_category_id,
 			category_id,
 			currency_id,
+			date_id,
 			state_id,
 			area_id,
 			goal,
@@ -485,8 +509,8 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 			pledged,
 			pledged_usd,
 			pledged_usd_real
-		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, currencyID, stateID, areaID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD, k.PledgedUSDReal)
+		) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, currencyID, dateID, stateID, areaID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD, k.PledgedUSDReal)
 		if err != nil {
 			return err
 		}
