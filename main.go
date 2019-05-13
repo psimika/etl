@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -70,6 +71,7 @@ func run() error {
 	}
 	defer zipr.Close()
 
+	start := time.Now()
 	for _, zf := range zipr.File {
 		if zf.Name != "ks-projects-201801.csv" {
 			break
@@ -99,6 +101,8 @@ func run() error {
 			return fmt.Errorf("loading data: %v", err)
 		}
 	}
+	elapsed := time.Since(start)
+	fmt.Printf("Finished ETL in %v\n", elapsed)
 
 	return nil
 }
@@ -272,6 +276,22 @@ func createTables(db *sql.DB) error {
 	if _, err := db.Exec(tableProducts); err != nil {
 		return err
 	}
+	const tableMainCategories = `
+		CREATE TABLE IF NOT EXISTS main_categories (
+			id INT PRIMARY KEY AUTO_INCREMENT,
+			name varchar(255)
+		)`
+	if _, err := db.Exec(tableMainCategories); err != nil {
+		return err
+	}
+	const tableCategories = `
+		CREATE TABLE IF NOT EXISTS categories (
+			id INT PRIMARY KEY AUTO_INCREMENT,
+			name varchar(255)
+		)`
+	if _, err := db.Exec(tableCategories); err != nil {
+		return err
+	}
 	const tableKickstarts = `
 		CREATE TABLE IF NOT EXISTS kickstarts (
 			id INT PRIMARY KEY AUTO_INCREMENT,
@@ -280,20 +300,30 @@ func createTables(db *sql.DB) error {
 			pledged varchar(255),
 			pledged_usd varchar(255),
 			product_id INT,
-			FOREIGN KEY (product_id) REFERENCES products (id)
+			main_category_id INT,
+			category_id INT,
+			FOREIGN KEY (product_id) REFERENCES products (id),
+			FOREIGN KEY (main_category_id) REFERENCES main_categories (id),
+			FOREIGN KEY (category_id) REFERENCES categories (id)
 		)`
 	if _, err := db.Exec(tableKickstarts); err != nil {
-		return err
+		return fmt.Errorf("creating table kickstarts: %v", err)
 	}
 
 	return nil
 }
 
 func deleteTables(db *sql.DB) error {
-	if _, err := db.Exec("DROP TABLE IF EXISTS kickstarts "); err != nil {
+	if _, err := db.Exec("DROP TABLE IF EXISTS kickstarts"); err != nil {
 		return err
 	}
-	if _, err := db.Exec("DROP TABLE IF EXISTS products "); err != nil {
+	if _, err := db.Exec("DROP TABLE IF EXISTS products"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS main_categories"); err != nil {
+		return err
+	}
+	if _, err := db.Exec("DROP TABLE IF EXISTS categories"); err != nil {
 		return err
 	}
 	return nil
@@ -312,6 +342,7 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 		total := len(kk)
 		percent := i * 100 / total
 		fmt.Printf("\r%d/%d (%d%%)", i, total, percent)
+
 		res, err := db.Exec("INSERT INTO products (kickstarter_id, name) values (?, ?)", k.Product.KickstarterID, k.Product.Name)
 		if err != nil {
 			return err
@@ -320,7 +351,35 @@ func loadData(db *sql.DB, kk []Kickstart) error {
 		if err != nil {
 			return err
 		}
-		_, err = db.Exec("INSERT INTO kickstarts (product_id, goal, backers, pledged, pledged_usd) values (?, ?, ?, ?, ?)", productID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD)
+
+		res, err = db.Exec("INSERT INTO main_categories (name) values (?)", k.MainCategory.Name)
+		if err != nil {
+			return err
+		}
+		mainCategoryID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+
+		res, err = db.Exec("INSERT INTO categories (name) values (?)", k.Category.Name)
+		if err != nil {
+			return err
+		}
+		categoryID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+
+		const insertKickstarts = `INSERT INTO kickstarts (
+			product_id,
+			main_category_id,
+			category_id,
+			goal,
+			backers,
+			pledged,
+			pledged_usd
+		) values (?, ?, ?, ?, ?, ?, ?)`
+		_, err = db.Exec(insertKickstarts, productID, mainCategoryID, categoryID, k.Goal, k.Backers, k.Pledged, k.PledgedUSD)
 		if err != nil {
 			return err
 		}
